@@ -1,0 +1,4 @@
+# 忽略临时文件与本地调试产物
+*.tmp
+boot.log
+node_modules/
