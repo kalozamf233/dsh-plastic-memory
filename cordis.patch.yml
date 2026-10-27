@@ -1,0 +1,17 @@
+# ============================================================================
+# dsh-plastic-memory —— DSH bundle patch
+# ============================================================================
+# 可塑性记忆插件挂载声明。
+#
+# 安装（本地开发，link 到插件目录）：
+#   在 <DSH_HOME>/profiles/<profile>/package.json 中：
+#     dependencies: 增加 "dsh-plastic-memory": "link:<插件绝对路径>"
+#     dsh.profile.bundles: 追加 "dsh-plastic-memory"
+#   然后在该 profile 目录下执行 pnpm install，重启 DSH。
+#
+# ⚠️ `name:` 必须与安装后的包名完全一致（这里是 dsh-plastic-memory）。
+# ============================================================================
+
+- insert:
+    - id: dsh-plastic-memory
+      name: dsh-plastic-memory
