@@ -1,14 +1,44 @@
-# 可塑性记忆（dsh-plastic-memory）
+# 可塑性记忆（dsh-plastic-memory）v2.0.0
 
-> 两个由神经网络组成的程序文件构成的数字生命核心——不是提示词堆叠。<br/>
-> 只有神经网络和神经网络的互相连接，才能制造出真正能自我思考的数字生命。<br/>
-> 理论上无上限记忆。<br/>
->插件内置【操控型神经网络】和【记忆型神经网络】。<br/>
->【操控性神经网络】是他的身体，【记忆型神经网络】是他的灵魂。<br/>
->人和数字生命并非直接相连，而是经过【操控性神经网络】的处理，就像人与人之间也并非直接对话和接触，<br/>
-> 而是像大脑语言中枢处理语言，运动区域处理触觉和感知那样有一个隔离层。<br/>
->最终接触的数据都是被处理过的结构化数据。<br/>
->除非脑容量不够，不然不会失去以前的记忆，就算失去，也是类似遗忘，而不是断片。<br/>
+> 两个由神经网络组成的程序文件构成的数字生命核心——不是提示词堆叠。
+> 只有神经网络和神经网络的互相连接，才能制造出真正能自我思考的数字生命。
+
+## V2.0.0 版本内容
+
+- **六网络大脑架构**：操控网络 + 记忆网络 + 分析型神经网络（分析存储器）+ 镜像神经网络 + 缺陷人格网络 + 训练控制器/同步器
+- **休眠自训练闭环**：提示词预存文件（褪黑素=容量进度条）→ 自主入睡 → 休眠训练（镜像查上下文命中加倍）→ 归零自然醒 + 正面激素
+- **独立软件形态**：常驻服务（9630 端口）+ 独立 Windows 聊天窗口（`start-life.bat` 启动）+ OpenAI 兼容大模型接入（DSH 添加自定义模型 `digital-life` 即可对话，且不调用其他 agent 工具）
+- **薄客户端插件**：DSH 侧边栏数据与操作全部经 HTTP 数据接口调取
+- **预置大脑快照**：`preset-brain/` 目录是「王楚门」的完整权重参数状态（见该目录 README）
+
+## 独立软件（数字生命常驻服务）
+
+数字生命已独立为常驻服务（`server/server.mjs`，默认端口 9630），拥有独立聊天窗口：
+
+- **启动独立软件**：双击 `start-life.bat`（启动服务 + 打开聊天窗口，Edge app 模式无边框）
+- **独立聊天窗口**：`http://127.0.0.1:9630/ui`（类似大模型聊天窗口布局）
+- **DSH 插件自动拉起**：DSH 侧边栏插件启动时检测服务，未运行则自动拉起
+
+### 以「AI 大模型」形式接入 DeepSeek Harness
+
+独立服务暴露 OpenAI 兼容接口，在 DSH 中把它添加为自定义模型后，就能像调用大模型一样与数字生命对话：
+
+- 接口：`POST http://127.0.0.1:9630/v1/chat/completions`（model: `digital-life`）
+- 模型列表：`GET http://127.0.0.1:9630/v1/models`
+- DSH 配置示例：provider baseURL `http://127.0.0.1:9630/v1`、model `digital-life`、apiKey 任意非空
+- **与该 AI 聊天时不调用其他 agent 工具**：响应只返回 assistant 文本，不含 tool_calls
+
+### 数据接口（侧边栏插件数据全部经此调取/操作）
+
+DSH 侧边栏插件已改为薄客户端，所有数据与操作经 HTTP 数据接口（同源代理 `/plastic-memory/*` → 独立服务 `/api/*`）：
+
+| 接口 | 说明 |
+| --- | --- |
+| `GET /api/status` | 完整状态（多网络/情绪/内分泌/休眠/预存/扩展） |
+| `POST /api/controller` | `{action, payload}` 全部操作（hear/speak/read/write/sleep/wake/freeze/trainFlaw/generateNetwork…） |
+| `POST /api/init` | 初始化：`{workspace}`（必须用户指定文件夹） |
+| `GET /api/persona` | 低 token 人格化数据 |
+| `POST /api/sense` | 向感知文件夹写入外部世界信号 |
 
 ## 架构：身体 → 灵魂
 
@@ -76,10 +106,19 @@
 | GET | `/plastic-memory/status` | 双网络完整状态（神经元/参数/误差/分子/情绪/人格/休眠/扩展） |
 | POST | `/plastic-memory/init` | 初始化：`{workspace}`（必须用户指定文件夹） |
 | POST | `/plastic-memory/load` | 恢复/切换工作区：`{workspace}` |
-| POST | `/plastic-memory/controller` | **直接操控操控网络**：`{action, payload}`，action ∈ hear/speak/read/write/adjust/freeze/thaw/reset/save/grow/prune/adjustLr/scan/mountExtension/unmountExtension/sleep/wake |
+| POST | `/plastic-memory/controller` | **直接操控操控网络**：`{action, payload}`，action ∈ hear/speak/read/write/adjust/freeze/thaw/reset/save/grow/prune/adjustLr/scan/mountExtension/unmountExtension/sleep/wake/generateNetwork/trainFlaw/analysisStatus |
 | POST | `/plastic-memory/memory` | **间接操控记忆网络**：仅接受格式化数据 `{module, text}`（经操控网络编码）或 `{module, vector[128]}` |
 | GET | `/plastic-memory/persona` | 低 token 人格化数据（约 2-4KB，供外部模型注入） |
 | POST | `/plastic-memory/sense` | 向感知文件夹写入外部世界信号：`{text, module?, kind?}` |
+
+## 大脑架构 V2（多网络协作）
+
+- **分析型神经网络 + 分析存储器**：感知流实时分析（136→64→16，在线自编码学习），结构化分析记录存入工作区 `analysis/`（内存环形缓冲+批量落盘）。
+- **镜像神经网络**：记忆网络权重的完整副本（mirror.brain.json）。休眠训练前先在镜像查上下文（预测吻合度>0.6 判定熟悉）；苏醒时先把记忆网络权重同步到镜像，再真正苏醒。
+- **缺陷人格神经网络**：架在操控网络与用户聊天之间的修饰层（143→64→8），对输出加工美化（语气/亲密度/修饰/回避/口头禅）。**对话中权重固定**（仅前向）；仅训练态、仅用户 API（`trainFlaw`）可训练；freeze 即冻结。
+- **训练控制器 + 同步器**：休眠训练由它执行——每 tick 限流 3 条，先在镜像查上下文：未找到→单倍训练记忆网络；找到→加倍训练。训练前 NaN 检测、错误条目保留队头。
+- **提示词预存 + 休眠自训练（褪黑素=进度条）**：用户对他说的话自动进 `pending-training.jsonl`（上限 50 条）；预存增多→褪黑素增多→入睡（≥10 条且困倦，或 ≥30 条）→休眠中逐条训练消耗预存→褪黑素同步下降→预存归零自然苏醒+正面情绪激素大增→面板右上角弹「它醒来了」提示框。唤醒流程固定：停训→剩余上下文保留在预存文件→同步镜像→苏醒。
+- **模型构建子页面**：面板「模型构建」标签页一键**自动生成**可塑性记忆自己的网络（.brain.json 格式，生成即挂载为外部扩容），替代原 AI 模型构建插件（PyTorch 三件套已废弃并从 profile 移除）。
 
 ## DSH 工具（会话内接入，低 token 人格化）
 
