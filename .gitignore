@@ -2,3 +2,21 @@
 *.tmp
 boot.log
 node_modules/
+
+# 工作区数据文件（数字生命权重/记忆/日志——不入库）
+plastic-memory.config.json
+episodes.jsonl
+pending-training.jsonl
+analysis/
+logs/
+senses/
+memory.brain.json
+controller.brain.json
+mirror.brain.json
+flaw.brain.json
+analysis.brain.json
+memory.genome.json
+memory.frozen.json
+
+# 例外：preset-brain/ 是版本化的出厂大脑快照，允许入库
+!preset-brain/
