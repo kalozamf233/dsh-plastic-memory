@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "name": "数字生命",
+  "seed": 304824603,
+  "createdAt": "2026-10-27T03:36:15.021Z",
+  "format": "dsh-plastic-memory",
+  "extensions": [
+    "E:\\memory-ext\\ext1.brain.json",
+    "E:\\memory-ext\\ext2.brain.json",
+    "E:\\memory-ext\\ext3.brain.json",
+    "E:\\memory-ext\\v2-auto-1.brain.json"
+  ]
+}
