@@ -10,6 +10,9 @@ import { SenseEncoder } from './lib/nn/encoder.mjs'
 import { EndocrineSystem } from './lib/nn/endocrine.mjs'
 import { MemoryNet, DIMS, interpretPersona } from './lib/nn/memorynet.mjs'
 import { ControllerNet } from './lib/nn/controllernet.mjs'
+import { AnalysisNet, AnalysisStore } from './lib/nn/analysisnet.mjs'
+import { DefectNet } from './lib/nn/flawnet.mjs'
+import { TrainingController } from './lib/trainer.mjs'
 import { PlasticBrain } from './lib/brain.mjs'
 
 let passed = 0
@@ -321,6 +324,91 @@ console.log('== 6. PlasticBrain 完整流程 ==')
   brain3.sleepNow()
   const said2 = brain3.speak('你好呀', {})
   check('speak 唤醒并带唤醒措辞', said2.wokeFromSleep === true && said2.text.includes('我刚才睡着了'))
+
+  // 对话引擎（语料批量扫描 → 问话检索回答）
+  writeFileSync(
+    join(dir, 'senses', 'conv.json'),
+    JSON.stringify([
+      { module: 'audio', kind: 'conversation', text: '你好', reply: '你好呀，见到你我很开心。', moodTag: 'happy' },
+      { module: 'audio', kind: 'conversation', text: '你好', reply: '你好，我在呢。', moodTag: 'neutral' },
+      { module: 'audio', kind: 'conversation', text: '你好', reply: '你好……我刚才有点走神。', moodTag: 'tired' },
+      { module: 'audio', kind: 'conversation', text: '你怎么样', reply: '我心情很好。', moodTag: 'happy' },
+      { module: 'audio', kind: 'conversation', text: '你怎么样', reply: '我有点困了。', moodTag: 'tired' },
+      { module: 'audio', kind: 'conversation', text: '再见', reply: '再见，我会想你的。', moodTag: 'neutral' },
+      { module: 'audio', kind: 'conversation', text: '你是谁', reply: '我是你的数字生命朋友。', moodTag: 'neutral' },
+    ]),
+    'utf8',
+  )
+  const convScan = brain3.scanSenses()
+  check('语料批量扫描', convScan.processed === 1)
+  const ans1 = brain3.speak('你好', {})
+  check('对话模式：问好得到语料回答', ans1.conversation === true && typeof ans1.reply === 'string' && ans1.reply.length > 0, JSON.stringify(ans1.reply))
+  const ans2 = brain3.speak('再见', {})
+  check('不同问话 → 不同回答', ans2.conversation === true && ans2.matchedQuestion !== ans1.matchedQuestion, `${ans1.matchedQuestion} vs ${ans2.matchedQuestion}`)
+  const replies = new Set()
+  for (let i = 0; i < 6; i++) {
+    const a = brain3.speak('你好', {})
+    replies.add(a.reply)
+  }
+  check('同一问话轮换不重复（≥2 种回答）', replies.size >= 2, `得到 ${replies.size} 种`)
+  // 状态调制：困倦时问"你怎么样"优先困倦回答
+  brain3.endocrine.set('melatonin', 0.8)
+  brain3.wakefulness = 0.2
+  const ansTired = brain3.speak('你怎么样', {})
+  check('身体状态调制回答（困倦优先）', ansTired.moodTag === 'tired' || ansTired.status.includes('困'), `moodTag=${ansTired.moodTag} status=${ansTired.status}`)
+  check('状态措辞存在', typeof ansTired.status === 'string' && ansTired.status.length > 0)
+
+  // ===================== 大脑架构 V2 集成测试 =====================
+  // 1. 新网络实例
+  check('V2: 分析网络实例', brain3.analysisNet instanceof AnalysisNet)
+  check('V2: 缺陷人格网络实例', brain3.flaw instanceof DefectNet)
+  check('V2: 训练控制器实例', brain3.trainer instanceof TrainingController)
+  // 2. perceive → 预存追加 + 分析存储
+  const stBefore = brain3.status()
+  brain3.hear('V2 架构测试：这句话应该进入预存文件', { module: 'memory' })
+  const stAfter = brain3.status()
+  check('V2: 对话追加预存', stAfter.pendingCount === stBefore.pendingCount + 1, `${stBefore.pendingCount}→${stAfter.pendingCount}`)
+  check('V2: 分析存储记录', stAfter.analysis.storeCount >= 0 && stAfter.analysis.initialized === true)
+  // 3. 缺陷人格网络：训练与冻结
+  const beforeFlawJson = JSON.stringify(brain3.flaw.toJSON())
+  const flawRes = brain3.trainFlaw('我希望对话更加温柔可爱一些', { epochs: 4 })
+  check('V2: trainFlaw 训练', typeof flawRes.loss === 'number' && flawRes.epochs === 4)
+  check('V2: trainFlaw 改变权重', JSON.stringify(brain3.flaw.toJSON()) !== beforeFlawJson)
+  brain3.freeze()
+  const flawFrozen = brain3.trainFlaw('冻结态训练应被跳过', { epochs: 4 })
+  check('V2: 冻结态跳过缺陷训练', flawFrozen.skipped === 'frozen')
+  brain3.thaw()
+  // 4. 休眠自训练闭环（pending 驱动）
+  brain3.trainer.appendPending({ t: Date.now(), text: '第一条休眠训练内容', latent32: Array(32).fill(0.1), module: 'memory' })
+  brain3.trainer.appendPending({ t: Date.now(), text: '第二条休眠训练内容', latent32: Array(32).fill(0.2), module: 'memory' })
+  brain3.trainer.appendPending({ t: Date.now(), text: '第三条休眠训练内容', latent32: Array(32).fill(0.3), module: 'memory' })
+  const pend0 = brain3.pendingCount
+  brain3.sleepNow()
+  check('V2: 手动入睡', brain3.asleep === true)
+  const proc = brain3.trainer.processPending(2)
+  check('V2: 休眠训练执行', proc.trained >= 1, JSON.stringify(proc))
+  check('V2: 训练消耗预存', brain3.pendingCount < pend0, `${pend0}→${brain3.pendingCount}`)
+  check('V2: 褪黑素进度条与预存关联', Math.abs(brain3._melatoninFromPending() - (0.12 + Math.min(0.85, brain3.pendingCount * 0.02))) < 1e-6, `mel=${brain3._melatoninFromPending()} vs ${0.12 + Math.min(0.85, brain3.pendingCount * 0.02)} pend=${brain3.pendingCount}`)
+  // 5. 统一苏醒流程：同步镜像
+  const wakeRes = brain3.wakeNow()
+  check('V2: 唤醒走统一流程', wakeRes.woke === true && wakeRes.synced === true)
+  check('V2: lastWakeAt 记录', typeof brain3.lastWakeAt === 'string' && brain3.lastWakeAt.length > 0)
+  check('V2: 镜像已同步', brain3.status().mirror.synced === true)
+  // 6. 自动生成网络
+  const genPath = join(dir, 'auto-generated.brain.json')
+  const gen = brain3.generateNetwork(genPath)
+  check('V2: 自动生成网络', gen.created === true && gen.paramCount > 1000)
+  const genSt = brain3.status()
+  check('V2: 生成后自动挂载为扩展', genSt.extensions.some((e) => e.path === genPath))
+  // 7. 持久化往返：新网络权重
+  brain3.save()
+  const brain4 = new PlasticBrain()
+  const st4 = brain4.load(dir)
+  brain4.stop()
+  check('V2: 重载后分析网络存在', st4.analysis.initialized === true)
+  check('V2: 重载后缺陷网络存在', st4.flaw.initialized === true)
+  check('V2: 重载后扩展含生成网络', Array.isArray(st4.extensions) && st4.extensions.some((e) => e.path === genPath))
+  brain4.dispose()
 
   // 清理
   brain.dispose()
