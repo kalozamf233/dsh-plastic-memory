@@ -20,3 +20,10 @@ memory.frozen.json
 
 # 例外：preset-brain/ 是版本化的出厂大脑快照，允许入库
 !preset-brain/
+# 世界运行时数据（不入库）
+server/world-data/
+# V4 自我训练数据文件（工作区数据，不入库）
+self-pending.jsonl
+self-training.jsonl
+self.brain.json
+recall.brain.json
