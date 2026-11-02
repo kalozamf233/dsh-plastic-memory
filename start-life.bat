@@ -2,18 +2,24 @@
 chcp 65001 >nul
 rem ============================================================
 rem Plastic Memory - Standalone App Launcher
-rem Start the resident service + open the standalone chat window
+rem Start the resident service + world service + chat window
 rem (Edge app mode, no browser frame)
 rem ============================================================
 setlocal
 set "NODE=C:\Users\wsp\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe"
-set "SERVER=C:\Users\wsp\.dsh\plugins\dsh-plastic-memory\server\server.mjs"
+set "PLUGIN=C:\Users\wsp\.dsh\plugins\dsh-plastic-memory"
+set "SERVER=%PLUGIN%\server\server.mjs"
+set "WORLD=%PLUGIN%\server\world-server.mjs"
 set "URL=http://127.0.0.1:9630/ui"
+set "WORLD_URL=http://127.0.0.1:9631"
 
-rem Start service (has built-in port-in-use guard: exits if already running)
+rem Start world service (independent program with its own UI)
+start "plastic-memory-world" /min "%NODE%" "%WORLD%"
+
+rem Start life service (built-in port-in-use guard)
 start "plastic-memory-service" /min "%NODE%" "%SERVER%"
 
-rem Wait for service to be ready (ping-based delay, works in any environment)
+rem Wait for services to be ready
 ping -n 3 127.0.0.1 >nul
 
 rem Open the standalone chat window (absolute Edge path, PATH-independent)
@@ -31,5 +37,6 @@ start "" "%URL%"
 
 :done
 echo [Plastic-Memory] Chat window: %URL%
+echo [Plastic-Memory] World UI: %WORLD_URL%
 echo [Plastic-Memory] AI model API: http://127.0.0.1:9630/v1/chat/completions (model=digital-life)
 endlocal
