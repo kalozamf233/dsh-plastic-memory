@@ -110,11 +110,19 @@
   .mol-grid .mini { font-size: 11px; color: var(--text-dim); display: inline-block; margin: 0 8px 4px 0; }
 
   /* ===== 输入区 ===== */
-  #inputbar { display: flex; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--bg-panel); }
+  #inputbar { display: flex; gap: 10px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--bg-panel); }
+  /* 接受方式选择器（类似选择模型：听/看，默认听） */
+  #modebar { display: flex; gap: 4px; padding: 3px; border-radius: 10px; background: var(--bg-input); border: 1px solid var(--border); }
+  .mode-btn {
+    border: none; border-radius: 8px; padding: 7px 13px; font-size: 12.5px; cursor: pointer;
+    background: transparent; color: var(--text-dim); transition: all .15s; white-space: nowrap;
+  }
+  .mode-btn:hover { color: var(--text); background: rgba(255,255,255,.06); }
+  .mode-btn.active { background: var(--user-bubble); color: #fff; }
   #input {
     flex: 1; background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px;
     color: var(--text); font-size: 14px; padding: 10px 14px; outline: none;
-    transition: border-color .15s;
+    transition: border-color .15s; min-width: 0;
   }
   #input:focus { border-color: var(--accent); }
   #send {
@@ -123,6 +131,12 @@
   }
   #send:hover { filter: brightness(1.15); }
   #send:disabled { opacity: .5; cursor: not-allowed; }
+  /* 消息气泡上的接受方式徽章 */
+  .bubble { position: relative; }
+  .chan {
+    position: absolute; top: -8px; right: -6px; font-size: 11px; line-height: 1;
+    padding: 3px 5px; border-radius: 6px; background: var(--bg-panel); border: 1px solid var(--border);
+  }
 
   /* ===== 顶部提示条 ===== */
   #toast {
@@ -209,6 +223,10 @@
     </aside>
   </div>
   <footer id="inputbar">
+    <div id="modebar" role="group" aria-label="对方接受信息的方式">
+      <button class="mode-btn active" id="modeAudio" type="button" title="默认：它以听觉接收你的话">👂 听</button>
+      <button class="mode-btn" id="modeVisual" type="button" title="切换：它以视觉接收（写入视觉脑区）">👀 看</button>
+    </div>
     <input id="input" type="text" placeholder="对它说点什么…（Enter 发送）" autocomplete="off">
     <button id="send">发送</button>
   </footer>
@@ -229,9 +247,25 @@ let sending = false
 let thinkingEl = null
 let pollTimer = null
 let introDone = false
+let mode = 'audio' // 对方接受信息的方式：audio=听（默认）| visual=看
 
 const $ = (id) => document.getElementById(id)
 const messagesEl = $('messages')
+
+/* ===== 接受方式选择（类似选择大模型） ===== */
+function setMode(m) {
+  mode = m === 'visual' ? 'visual' : 'audio'
+  try { localStorage.setItem('pm-mode', mode) } catch { /* 忽略存储失败 */ }
+  $('modeAudio').classList.toggle('active', mode === 'audio')
+  $('modeVisual').classList.toggle('active', mode === 'visual')
+  $('input').placeholder = mode === 'audio'
+    ? '对它说点什么…（Enter 发送）'
+    : '写点什么给它看…（Enter 发送）'
+}
+try { mode = localStorage.getItem('pm-mode') === 'visual' ? 'visual' : 'audio' } catch { mode = 'audio' }
+$('modeAudio').addEventListener('click', () => setMode('audio'))
+$('modeVisual').addEventListener('click', () => setMode('visual'))
+setMode(mode)
 
 /* ===== 工具 ===== */
 function fmt(v, d = 2) {
@@ -284,7 +318,16 @@ function addMessage(role, text, meta) {
   scrollBottom()
   return bubble
 }
-function addUserMessage(text) { return addMessage('user', text) }
+function addUserMessage(text, channel) {
+  const bubble = addMessage('user', text)
+  if (bubble) {
+    const tag = document.createElement('span')
+    tag.className = 'chan'
+    tag.textContent = channel === 'visual' ? '👀' : '👂'
+    bubble.appendChild(tag)
+  }
+  return bubble
+}
 function addLifeMessage(text, meta) { return addMessage('life', text, meta) }
 function addSystemMessage(text) { return addMessage('system', text) }
 function showThinking() {
@@ -317,12 +360,13 @@ async function sendMessage() {
   const text = input.value.trim()
   if (!text || sending) return
   input.value = ''
-  addUserMessage(text)
+  const channel = mode === 'visual' ? 'visual' : 'audio'
+  addUserMessage(text, channel)
   showThinking()
   sending = true
   $('send').disabled = true
   try {
-    const res = await controller('speak', { text })
+    const res = await controller('speak', { text, module: channel })
     hideThinking()
     const result = res && res.result ? res.result : null
     if (res && res.ok && result && typeof result.text === 'string') {
