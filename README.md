@@ -79,9 +79,9 @@ DSH 侧边栏插件已改为薄客户端，所有数据与操作经 HTTP 数据�
 
 ### 完整架构图（V2–V4）
 
-![可塑性记忆数字生命完整架构](docs/digital-life-brain.png)
+[🖥 打开完整架构图（交互式网页，可缩放）](https://kalozamf233.github.io/dsh-plastic-memory/digital-life-brain.html)
 
-> 交互式版本见仓库 `.archify/architecture-digital-life-brain-20261103-021300/digital-life-brain.html`（下载后用浏览器打开，可缩放查看每个网络与数据流）。
+> 架构图源文件：`docs/digital-life-brain.html`（GitHub Pages 渲染，点击链接直接跳转到流程图页面）。
 
 ## 工作机制
 
