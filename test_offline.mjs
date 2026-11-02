@@ -13,6 +13,8 @@ import { ControllerNet } from './lib/nn/controllernet.mjs'
 import { AnalysisNet, AnalysisStore } from './lib/nn/analysisnet.mjs'
 import { DefectNet } from './lib/nn/flawnet.mjs'
 import { TrainingController } from './lib/trainer.mjs'
+import { BodyNet, desireFromEndocrine } from './lib/bodynet.mjs'
+import { hasMark } from './lib/recallnet.mjs'
 import { PlasticBrain } from './lib/brain.mjs'
 
 let passed = 0
@@ -409,6 +411,64 @@ console.log('== 6. PlasticBrain 完整流程 ==')
   check('V2: 重载后缺陷网络存在', st4.flaw.initialized === true)
   check('V2: 重载后扩展含生成网络', Array.isArray(st4.extensions) && st4.extensions.some((e) => e.path === genPath))
   brain4.dispose()
+
+  // ===================== 大脑架构 V3 集成测试（世界/基因/身体） =====================
+  // 1. 基因：100 位永久
+  check('V3: 基因 100 位小写', typeof brain3.gene === 'string' && /^[a-z]{100}$/.test(brain3.gene), String(brain3.gene).slice(0, 20))
+  brain3.save()
+  const stGene = brain3.status()
+  check('V3: 基因出现在状态', stGene.gene && stGene.gene.length === 100)
+  // 2. 身体：出生自带世界坐标
+  check('V3: 身体出生坐标', brain3.body && brain3.body.pos.x === 20 && brain3.body.pos.y === 20 && brain3.body.pos.z === 0)
+  check('V3: 身体状态编码 8 维', brain3.body.encode().length === 8)
+  // 3. 世界降级（无世界服务时不崩溃）
+  const senseOff = await brain3.worldSense()
+  check('V3: 无世界时感知降级', Array.isArray(senseOff.sights) && brain3.worldOnline === false)
+  const actOff = await brain3.worldAct('move', { dir: 'n' })
+  check('V3: 无世界时行为降级', actOff.ok === false)
+  await brain3.worldTick()
+  check('V3: 无世界时心跳不抛错', true)
+  // 4. 身体数据网络
+  check('V3: 身体数据网络实例', brain3.bodyNet !== null && typeof brain3.bodyNet.decide === 'function')
+  const desireVec = desireFromEndocrine(brain3.endocrine.levels)
+  const decision = brain3.bodyNet.decide({ sights: [], sounds: [], smells: [], touches: [] }, brain3.body, desireVec, {})
+  check('V3: 身体网络决策合法', decision && ['move', 'jump', 'grab', 'eat', 'rest'].includes(decision.action), JSON.stringify(decision))
+  check('V3: 状态含世界/基因/身体字段', brain3.status().world !== undefined && brain3.status().body !== undefined && brain3.status().gene !== undefined)
+
+  // ===================== 大脑架构 V4 测试（自我训练系统） =====================
+  // 1. 实例
+  check('V4: 自我记忆网络实例', brain3.selfNet !== null && typeof brain3.selfNet.observe === 'function')
+  check('V4: 回忆对话网络实例', brain3.recallNet !== null && typeof brain3.recallNet.judge === 'function')
+  check('V4: 自我训练器实例', brain3.selfTrainer !== null && typeof brain3.selfTrainer.processSelf === 'function')
+  // 2. 清醒时：speak → 用户话 + 标记话进自我预存；返回文本不带标记
+  const sp0 = brain3.selfTrainer.readSelfPending().length
+  const saidV4 = brain3.speak('你好', {})
+  const sp1 = brain3.selfTrainer.readSelfPending().length
+  check('V4: 对话同步入自我预存（用户话+标记话）', sp1 === sp0 + 2, `${sp0}→${sp1}`)
+  check('V4: 返回文本已剥离标记', !hasMark(saidV4.text) && saidV4.text.length > 0)
+  const selfEntries = brain3.selfTrainer.readSelfPending()
+  check('V4: 他说的话带小标记', selfEntries.some((e) => e.source === 'self' && hasMark(e.text)))
+  check('V4: 用户话不带标记', selfEntries.some((e) => e.source === 'user' && !hasMark(e.text)))
+  // 3. 休眠：回忆网络过滤（标记句两份 + 非对话丢弃）
+  brain3.selfTrainer.appendSelfPending({ t: Date.now(), text: '今天天气不错。', source: 'user', module: 'memory' }) // 非对话
+  const tr0 = brain3.selfTrainer.readSelfTraining().length
+  const filtered = brain3.selfTrainer.processSelf(1000) // 处理全部队列
+  const tr1 = brain3.selfTrainer.readSelfTraining().length
+  check('V4: 回忆网络过滤出对话内容', filtered.filtered >= 1 && tr1 > tr0, JSON.stringify(filtered))
+  check('V4: 标记句存两份', filtered.marked >= 1 && tr1 - tr0 === filtered.filtered + filtered.marked, `filtered=${filtered.filtered} marked=${filtered.marked} delta=${tr1 - tr0}`)
+  check('V4: 非对话被丢弃', brain3.selfTrainer.readSelfPending().some((e) => e.text === '今天天气不错。') === false)
+  // 4. 自我训练（标记句两遍 → observeCount 增加量 = 训练条数 + 标记数）
+  const obs0 = brain3.selfNet.observeCount
+  const trained = brain3.selfTrainer.trainSelf(1000)
+  const obsDelta = brain3.selfNet.observeCount - obs0
+  check('V4: 自我网络被训练（标记句两遍）', trained.trained >= 1 && obsDelta === trained.trained + trained.doubled, `trained=${trained.trained} doubled=${trained.doubled} delta=${obsDelta}`)
+  // 5. 持久化往返
+  brain3.save()
+  const brain5 = new PlasticBrain()
+  const st5 = brain5.load(dir)
+  brain5.stop()
+  check('V4: 重载后自我系统存在', st5.self && st5.self.net && st5.self.recall && st5.self.trainer)
+  brain5.dispose()
 
   // 清理
   brain.dispose()
