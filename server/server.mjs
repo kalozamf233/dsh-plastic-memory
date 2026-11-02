@@ -380,6 +380,41 @@ const server = createServer(async (req, res) => {
       json(res, 200, { ok: true, ...brain.status(), workspace: resolveWorkspace() })
       return
     }
+    // ---- 世界交互接口（V3）----
+    if (path === '/api/world/status' && req.method === 'GET') {
+      json(res, 200, {
+        ok: true,
+        world: brain.status().world,
+        body: brain.status().body,
+        gene: brain.status().gene,
+        bodyNet: brain.status().bodyNet,
+      })
+      return
+    }
+    if (path === '/api/world/sense' && req.method === 'POST') {
+      const body = await parseBody(req, res)
+      if (body === null) return
+      const result = await brain.worldSense(
+        Array.isArray(body.senses) ? body.senses : undefined,
+        Number.isFinite(body.range) ? body.range : undefined,
+      )
+      json(res, 200, { ok: true, result })
+      return
+    }
+    if (path === '/api/world/act' && req.method === 'POST') {
+      const body = await parseBody(req, res)
+      if (body === null) return
+      const result = await brain.worldAct(body.action ?? 'rest', { dir: body.dir, target: body.target })
+      if (result.effects) brain._applyWorldEffects(result.effects)
+      if (result.newPos) brain.body?.applyPos(result.newPos)
+      json(res, 200, { ok: result.ok !== false, result })
+      return
+    }
+    if (path === '/api/world/events' && req.method === 'GET') {
+      await brain.worldEvents()
+      json(res, 200, { ok: true, lastEventTs: brain.worldLastEventTs })
+      return
+    }
     if (path === '/api/init' && req.method === 'POST') {
       const body = await parseBody(req, res)
       if (body === null) return
