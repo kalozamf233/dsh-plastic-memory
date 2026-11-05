@@ -5,10 +5,13 @@
 // CORS 全开。接口：
 //   GET  /             → server/world-ui/index.html（观察界面）
 //   GET  /state        → 世界全量状态
+//   GET  /state-simple → 纯文本行：首行 `temp <温度> <tick>`，其后 `item|entity x y z name`
+//                        （raylib3D 渲染程序每 1 秒经 WinHTTP 轮询）
 //   GET  /events       ?entity=xx&since=ts → 世界主动反馈事件
 //   POST /register     {entity, pos} → 注册/恢复实体
-//   POST /sense        {entity, pos, dir, range, senses} → 六感
+//   POST /sense        {entity, pos, dir, range, senses} → 六感（含温度/温度文本/spoken）
 //   POST /act          {entity, pos, action, dir, target} → 行为结果
+//   POST /speak        {entity, text} → 把文字放到实体位置（下次 sense 的 spoken 领取）
 // 心跳：每秒 tick（重力/事件引擎）；每 5 秒原子写 server/world-data/world.json。
 // 零外部依赖（node:http / node:fs / node:path + lib/world.mjs）。
 // ============================================================================
@@ -17,7 +20,8 @@ import http from 'node:http'
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { World } from '../lib/world.mjs'
+import { World, temperatureAt } from '../lib/world.mjs'
+import { checkWorldAction, checkGodPower, GODHOOD_NAMES } from '../lib/godhood.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT_WORLD || 9631)
@@ -101,6 +105,25 @@ const server = http.createServer(async (req, res) => {
       json(res, 200, world.loadState())
       return
     }
+    // raylib3D 渲染程序用的纯文本简化状态：
+    //   首行 `temp <温度> <tick>`；其后每行 `item|entity x y z name`
+    if (req.method === 'GET' && url.pathname === '/state-simple') {
+      const st = world.loadState()
+      const ents = Object.values(st.entities ?? {})
+      const anchor = ents[0]?.pos ?? { x: 20, y: 20, z: 0 }
+      const temp = temperatureAt(anchor.x, anchor.y, anchor.z)
+      const lines = [`temp ${temp} ${st.tick}`]
+      for (const it of st.items) {
+        lines.push(`item ${it.pos.x} ${it.pos.y} ${it.pos.z} ${String(it.name ?? it.type)}`)
+      }
+      for (const e of ents) {
+        const name = String(e.id ?? 'life').replace(/\s+/g, '_')
+        lines.push(`entity ${e.pos.x} ${e.pos.y} ${e.pos.z} ${name}`)
+      }
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
+      res.end(lines.join('\n') + '\n')
+      return
+    }
     // 世界主动反馈事件
     if (req.method === 'GET' && url.pathname === '/events') {
       const entity = url.searchParams.get('entity')
@@ -112,7 +135,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/register') {
       const body = await readBody(req)
       if (!body.entity) return json(res, 400, { ok: false, error: '缺少 entity' })
-      json(res, 200, world.registerEntity(String(body.entity), body.pos ?? {}))
+      const tier = Number.isInteger(body.tier) ? body.tier : 2 // 默认干涉者
+      json(res, 200, world.registerEntity(String(body.entity), body.pos ?? {}, { tier }))
       return
     }
     if (req.method === 'POST' && url.pathname === '/sense') {
@@ -124,7 +148,33 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/act') {
       const body = await readBody(req)
       if (!body.entity) return json(res, 400, { ok: false, error: '缺少 entity' })
+      // 神格校验：观察者只能旁观，无法插手
+      const tier = world.entityTier(String(body.entity))
+      const check = checkWorldAction(tier, body.action ?? '')
+      if (!check.ok) return json(res, 403, { ok: false, error: check.error, tier, tierName: GODHOOD_NAMES[tier] ?? '未知' })
       json(res, 200, world.act(String(body.entity), body))
+      return
+    }
+    if (req.method === 'POST' && url.pathname === '/speak') {
+      const body = await readBody(req)
+      if (!body.entity) return json(res, 400, { ok: false, error: '缺少 entity' })
+      json(res, 200, world.speak(String(body.entity), body.text))
+      return
+    }
+    // ---- 神力端点（仅神格「神」可用）----
+    if (req.method === 'POST' && url.pathname === '/god') {
+      const body = await readBody(req)
+      if (!body.entity) return json(res, 400, { ok: false, error: '缺少 entity' })
+      const tier = world.entityTier(String(body.entity))
+      const check = checkGodPower(tier, body.power ?? '')
+      if (!check.ok) return json(res, 403, { ok: false, error: check.error, tier, tierName: GODHOOD_NAMES[tier] ?? '未知' })
+      const result = world.godPower(String(body.entity), body.power, body.args ?? {})
+      json(res, 200, { ok: true, ...result })
+      return
+    }
+    // ---- 观察者故事：世界发生的故事（记录职责）----
+    if (req.method === 'GET' && url.pathname === '/story') {
+      json(res, 200, { ok: true, stories: world.stories() })
       return
     }
     json(res, 404, { ok: false, error: `未找到接口: ${req.method} ${url.pathname}` })
