@@ -15,7 +15,7 @@ import { DefectNet } from './lib/nn/flawnet.mjs'
 import { TrainingController } from './lib/trainer.mjs'
 import { BodyNet, desireFromEndocrine } from './lib/bodynet.mjs'
 import { hasMark } from './lib/recallnet.mjs'
-import { PlasticBrain } from './lib/brain.mjs'
+import { PlasticBrain, PENDING_CAPACITY } from './lib/brain.mjs'
 
 let passed = 0
 let failed = 0
@@ -390,7 +390,8 @@ console.log('== 6. PlasticBrain 完整流程 ==')
   const proc = brain3.trainer.processPending(2)
   check('V2: 休眠训练执行', proc.trained >= 1, JSON.stringify(proc))
   check('V2: 训练消耗预存', brain3.pendingCount < pend0, `${pend0}→${brain3.pendingCount}`)
-  check('V2: 褪黑素进度条与预存关联', Math.abs(brain3._melatoninFromPending() - (0.12 + Math.min(0.85, brain3.pendingCount * 0.02))) < 1e-6, `mel=${brain3._melatoninFromPending()} vs ${0.12 + Math.min(0.85, brain3.pendingCount * 0.02)} pend=${brain3.pendingCount}`)
+  // V5：褪黑素 = 预存当前容量/总容量 比值（容量满 → 1）
+  check('V5: 褪黑素为容量比值', Math.abs(brain3._melatoninFromPending() - Math.min(1, brain3.pendingCount / PENDING_CAPACITY)) < 1e-6, `mel=${brain3._melatoninFromPending()} vs ${Math.min(1, brain3.pendingCount / PENDING_CAPACITY)} pend=${brain3.pendingCount}`)
   // 5. 统一苏醒流程：同步镜像
   const wakeRes = brain3.wakeNow()
   check('V2: 唤醒走统一流程', wakeRes.woke === true && wakeRes.synced === true)
@@ -469,6 +470,35 @@ console.log('== 6. PlasticBrain 完整流程 ==')
   brain5.stop()
   check('V4: 重载后自我系统存在', st5.self && st5.self.net && st5.self.recall && st5.self.trainer)
   brain5.dispose()
+
+  // ===================== 大脑架构 V5 测试（休眠比值/人格构造/神经控制器） =====================
+  // 1. 褪黑素比值 + 容量满强制入睡（与时间无关）
+  check('V5: 人格构造器实例', brain3.personaBuilder !== null && typeof brain3.personaBuilder.build === 'function')
+  const melHalf = brain3._melatoninFromPending()
+  check('V5: 褪黑素=容量比值', Math.abs(melHalf - Math.min(1, brain3.pendingCount / PENDING_CAPACITY)) < 1e-6)
+  // 2. 容量满 → 强制入睡（无时间条件）
+  while (brain3.pendingCount < PENDING_CAPACITY) {
+    brain3.trainer.appendPending({ t: Date.now(), text: '填满预存条目', latent32: Array(32).fill(0.1), module: 'memory' })
+  }
+  brain3.wakefulness = 1 // 清醒度不影响入睡
+  brain3._updateSleep(1)
+  check('V5: 容量满强制入睡（与时间无关）', brain3.asleep === true)
+  // 3. 人格构造闭环：训练完 → 构建 → 替换缺陷人格网络 + 神经控制器合并
+  const flawParamsBefore = brain3.flaw.net.paramCount
+  brain3.trainer.readPending().forEach(() => {}) // 确保有 pending
+  // 直接把预存清空并手动触发构建（避免长时间训练）
+  const flawJsonBeforeV5 = JSON.stringify(brain3.flaw.toJSON())
+  const buildRes = brain3._runPersonaBuild()
+  const flawJsonAfterV5 = JSON.stringify(brain3.flaw.toJSON())
+  check('V5: 人格构造闭环执行', buildRes && typeof buildRes.loss === 'number', JSON.stringify(buildRes).slice(0, 80))
+  check('V5: 构造后缺陷人格网络被替换', flawJsonBeforeV5 !== flawJsonAfterV5)
+  check('V5: 神经控制器合并后网络可加载', brain3.flaw !== null && typeof brain3.flaw.apply === 'function', `params ${flawParamsBefore}→${brain3.flaw.net.paramCount}`)
+  // 4. 温度：世界不可达时不崩（lastTemperature 保持默认）
+  await brain3.worldTick()
+  check('V5: 体感温度字段存在', Number.isFinite(brain3.lastTemperature))
+  // 5. 对话经世界：世界离线时降级直连（speak 正常回复）
+  const spokeV5 = brain3.speak('你好', {})
+  check('V5: 对话经世界降级直连正常', spokeV5 && typeof spokeV5.text === 'string' && spokeV5.text.length > 0)
 
   // 清理
   brain.dispose()
