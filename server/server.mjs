@@ -109,6 +109,7 @@ const CONTROLLER_ACTIONS = new Set([
   'hear', 'speak', 'read', 'write', 'adjust', 'freeze', 'thaw', 'reset', 'save',
   'grow', 'prune', 'adjustLr', 'scan', 'mountExtension', 'unmountExtension',
   'sleep', 'wake', 'generateNetwork', 'trainFlaw', 'analysisStatus',
+  'setGodhood', 'godPower',
 ])
 
 async function handleController(req, res, body) {
@@ -183,6 +184,12 @@ async function handleController(req, res, body) {
         break
       case 'analysisStatus':
         result = brain.analysisStatus(payload.limit ?? 20)
+        break
+      case 'setGodhood':
+        result = await brain.setGodhood(payload.tier ?? 1)
+        break
+      case 'godPower':
+        result = await brain.worldGodPower(payload.power ?? '', payload.args ?? {})
         break
       default:
         result = null
@@ -439,21 +446,10 @@ const server = createServer(async (req, res) => {
       json(res, 200, { ok: true, ...brain.persona({ recent: 6 }) })
       return
     }
+    // V5：感知文件夹已取消——外部世界信号一律经世界服务（/api/world/sense 与 /speak）进入；
+    // 训练接口保留：POST /api/controller {action:'hear'|'write'} 仍可直训。
     if (path === '/api/sense' && req.method === 'POST') {
-      const body = await parseBody(req, res)
-      if (body === null) return
-      if (typeof body.text !== 'string' || body.text === '') {
-        json(res, 400, { ok: false, error: 'text 字段必填' })
-        return
-      }
-      if (!brain.initialized) {
-        json(res, 400, { ok: false, error: '大脑未初始化' })
-        return
-      }
-      const { writeFileSync } = await import('node:fs')
-      const file = join(brain.workspace.paths.senses, `sense-${Date.now()}.txt`)
-      writeFileSync(file, body.module ? JSON.stringify({ module: body.module, text: body.text }) : body.text, 'utf8')
-      json(res, 200, { ok: true, file })
+      json(res, 410, { ok: false, error: '感知文件夹已取消（V5）：请改用 POST /api/controller {action:"hear"} 直训，或经世界服务发送感知' })
       return
     }
 
