@@ -27,3 +27,4 @@ self-pending.jsonl
 self-training.jsonl
 self.brain.json
 recall.brain.json
+persona-builder.brain.json
